@@ -1,0 +1,116 @@
+#!/bin/bash
+
+appname=$1
+appversion=$2
+appUpdateGuid=$3
+windir="$(pwd)"
+
+create_wxs_file () {
+   wxsfile="Installer/${appname}.wxs"
+   cat > "${wxsfile}" <<_EOF_
+<?xml version="1.0" encoding="utf-8"?>
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi" xmlns:util="http://schemas.microsoft.com/wix/UtilExtension">
+  <INCLUDE_WXI_FILES>
+  <Product Id="*" Name="${appname}" Language="1033" Version="${appversion}" Manufacturer="Tandem" UpgradeCode="${appUpdateGuid}">
+    <Package Description="This is the description" Comments="No comments" InstallerVersion="200" Compressed="yes" />
+    <Media Id="1" Cabinet="simple.cab" EmbedCab="yes" />
+    <Directory Id="TARGETDIR" Name="SourceDir">
+      <Directory Id="ProgramFilesFolder" Name="PFiles">
+        <Directory Id="INSTALLDIR" Name="efficiency">
+          <INCLUDE_EXTRA_DIRS>
+        </Directory>
+      </Directory>
+      <Directory Id="DesktopFolder"/>
+      <Directory Id="ProgramMenuFolder">
+        <Directory Id="ProgramMenuDir" Name="Tandem ${appname}">
+          <Component Id="StartMenuShortcuts" Guid="DA8BB9E1-7AFF-4D80-B37A-A309B073CB66">
+            <RemoveFolder Id="ProgramMenuDir" On="uninstall"/>
+            <RegistryValue Root="HKCU" Key="Software\[Manufacturer]\[ProductName]" Type="string" Value=""/>
+          </Component>
+        </Directory>
+      </Directory>
+    </Directory>
+    <Feature Id="Complete" Title="Main Feature" Level="1">
+      <INCLUDE_WXI_COMPONENTS>
+      <ComponentRef Id="StartMenuShortcuts" />
+    </Feature>
+  </Product>
+</Wix>
+_EOF_
+
+   for file in `ls Installer/*.wxi` ; do
+      file=`echo ${file} | sed "s|\.wxi||" | sed "s|Installer/||"`
+      indent=`grep \<INCLUDE_WXI_FILES\> ${wxsfile} | sed "s|^\(\ \+\).*|\1|"`
+      sed -i "/<INCLUDE_WXI_FILES>/i\\${indent}<?include ${file}.wxi ?>" ${wxsfile}
+      indent=`grep \<INCLUDE_WXI_COMPONENTS\> ${wxsfile} | sed "s|^\(\ \+\).*|\1|"`
+      sed -i "/<INCLUDE_WXI_COMPONENTS>/i\\${indent}<ComponentGroupRef Id=\"${file}\" />" ${wxsfile}
+      if [[ "${file}" == "exe" ]] || [[ "${file}" == "dlls" ]] ; then continue ; fi
+      indent=`grep \<INCLUDE_EXTRA_DIRS\> ${wxsfile} | sed "s|^\(\ \+\).*|\1|"`
+      sed -i "/<INCLUDE_EXTRA_DIRS>/i\\${indent}<Directory Id=\"INSTALLDIR${file}\" Name=\"${file}\"/>" ${wxsfile}
+   done
+   sed -i "/<INCLUDE_WXI_FILES>/d" ${wxsfile}
+   sed -i "/<INCLUDE_WXI_COMPONENTS>/d" ${wxsfile}
+   sed -i "/<INCLUDE_EXTRA_DIRS>/d" ${wxsfile}
+}
+
+if ! hash wixl 2>/dev/null ; then echo "msitools are not installed" ; exit 2 ; fi
+
+appArch="x86"
+if [[ `basename ${windir}` == "Win64" ]] ; then define appArch="x64" ; fi
+
+if [[ ! `find ${windir}/${appname}.exe` ]] ; then
+   echo -e "\n!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\nNo ${appname}.exe in folder ${windir}!\nExiting!"
+   exit 1
+else
+   echo -e "\n!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\nProcessing ${appname}.exe in folder ${windir}!\n"
+   if [[ ! -d Installer ]] ; then mkdir Installer ; fi
+   wxifile="Installer/exe.wxi"
+   find ${windir}/${appname}.exe | wixl-heat -p ${windir}/ --component-group exe --var windir --directory-ref=INSTALLDIR > ${wxifile}
+   sed -i "s|^\(\ \+\)\(<File Id.\+\)/>|\1\2>\n\1</File>|" ${wxifile}
+   indent=`grep File\ Id ${wxifile} | sed "s|^\(\ \+\).*|\1|"`
+   sed -i "/<File Id/a\\
+${indent}  <Shortcut Id=\"DesktopShortcut\" Directory=\"DesktopFolder\" Name=\"${appname} ${appversion}\" WorkingDirectory=\"INSTALLDIR\" Advertise=\"yes\"/>\n\
+${indent}  <Shortcut Id=\"MenuShortcut\" Directory=\"ProgramMenuDir\" Name=\"${appname} ${appversion}\" WorkingDirectory=\"INSTALLDIR\" Advertise=\"yes\"/>" ${wxifile}
+fi
+
+
+if [[ ! `find ${windir}/*.dll` ]] ; then
+   echo -e "\n!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\nNo dlls in folder ${windir}!\n"
+else
+   echo -e "\n!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\nProcessing dlls in folder ${windir}!\n"
+   wxifile="Installer/dlls.wxi"
+   find ${windir}/*.dll | wixl-heat -p ${windir}/ --component-group dlls --var windir --directory-ref=INSTALLDIR > ${wxifile}
+fi
+
+if [[ ! `find ${windir}/platforms/*.dll` ]] ; then
+   echo -e "\n!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\nNo platform dlls in folder ${windir}!\n"
+else
+   echo -e "\n!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\nProcessing platform dlls in folder ${windir}!\n"
+   wxifile="Installer/platforms.wxi"
+   find ${windir}/platforms/*.dll | wixl-heat -p ${windir}/platforms/ --component-group platforms --var windir/platforms --directory-ref=INSTALLDIRplatforms > ${wxifile}
+fi
+
+for dir in `ls -d ${windir}/*/` ; do
+   dir=$(basename ${dir})
+   if [[ "${dir}" == "Installer" ]] || [[ "${dir}" == "platforms" ]] ; then 
+      echo -e "\n!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\nSkipping folder ${dir} in ${windir}!\n"
+      continue
+   else
+      echo -e "\n!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\nProcessing folder ${dir} in ${windir}!\n"
+      wxifile="Installer/${dir}.wxi"
+      find ${dir}/*[!~] | wixl-heat -p ${dir}/ --component-group ${dir} --var windir/${dir} --directory-ref=INSTALLDIR${dir} > ${wxifile}
+   fi
+done
+
+sed -i "s|\$(windir\(.*\))|${windir}\1|g" Installer/*.wxi
+sed -i "s/<Wix.*>/<Include>/" Installer/*.wxi
+sed -i "s/<\/Wix.*>/<\/Include>/" Installer/*.wxi
+
+create_wxs_file
+
+wixl -a ${appArch} -v Installer/${appname}.wxs -o ${appname}.msi
+wixlresult="$?"
+if [[ "$wixlresult" != "0" ]] ; then echo "" ; echo "!!!!!!!!!!!!!!!!!!!!!" ; echo "An error occured while creating installer." ; echo "Exiting without removing any files." ; exit 2 ; fi
+rm -rf ./Installer
+
+exit 0

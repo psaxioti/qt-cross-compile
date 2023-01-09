@@ -1,0 +1,53 @@
+#!/bin/bash
+
+dllFolder=$1
+
+skippingDLLs=("KERNEL32.dll")
+skippingDLLs+=("msvcrt.dll")
+skippingDLLs+=("ADVAPI32.dll")
+skippingDLLs+=("NETAPI32.dll")
+skippingDLLs+=("ole32.dll")
+skippingDLLs+=("SHELL32.dll")
+skippingDLLs+=("USER32.dll")
+skippingDLLs+=("USERENV.dll")
+skippingDLLs+=("VERSION.dll")
+skippingDLLs+=("WS2_32.dll")
+skippingDLLs+=("GDI32.dll")
+skippingDLLs+=("dwmapi.dll")
+skippingDLLs+=("UxTheme.dll")
+skippingDLLs+=("d3d9.dll")
+
+skippingDLLs+=("MPR.dll")
+skippingDLLs+=("WINMM.dll")
+skippingDLLs+=("comdlg32.dll")
+#skippingDLLs+=("")
+
+cp -r `find ${dllFolder} -iname platforms -not -iwholename *src*` ./
+
+declare -a skippedDLLs
+
+result=1
+while [[ "$result" != "0" ]] ; do
+   result=0
+   for file in `objdump -p ./*.exe ./*.dll 2>/dev/null | grep "\.dll" | cut -f3 -d' '` ; do
+      if [[ ! -e ${file} ]] ; then
+         if [[ " ${skippingDLLs[*]} " =~ " ${file} " ]] ; then
+            if [[ ! " ${skippedDLLs[*]} " =~ " ${file} " ]] ; then
+               echo "Skipping file ${file}"
+               skippedDLLs+=("${file}")
+            fi
+            continue
+         fi
+         if [[ `find ${dllFolder} -name ${file}` ]] ; then
+            echo "Adding missing ${file}"
+            find ${dllFolder} -name ${file} -exec cp {} ./ ';'
+            result=1
+         else
+            echo "Cannot find ${file}. Exiting"
+            exit 1
+         fi
+      fi
+   done
+done
+
+exit 0

@@ -1,0 +1,100 @@
+#!/bin/bash
+
+curDir=$(pwd)
+appname=$(basename ${curDir})
+
+usage="
+Usage: `basename $0` [OPTION] \"...\"
+Compile a Qt program for different platforms.
+If no options are given the script will detect the platform and
+compile the program with the latest Qt version installed.
+
+Additional flags to be passed at the qmake -project command can
+be given in quotes.
+The default flags to be passed are:
+For all the systems
+   \"QT += core gui\" \"greaterThan(QT_MAJOR_VERSION, 4): QT += widgets\"
+Additionaly for Windows and linux systems with qt5
+   \"DEPENDPATH += . include src\" \"INCLUDEPATH += . include\"
+
+After compilation the directory will be cleaned.
+
+  -h, --help                    display this help and exit
+  -win, -win64                  cross-compile code for windows 64bit OS
+                                the mingw cross-compilers have to be already
+                                installed
+  -win32                        cross-compile code for windows 32bit OS
+                                the mingw cross-compilers have to be already
+                                installed
+  -d, --debug                   it will keep the project build folder
+"
+
+for arg in "$@" ; do
+   case "$1" in
+      -h|--help)
+         echo "$usage"
+         exit 0
+      ;;
+      -win|-win64)
+         windows64="1"
+         shift
+      ;;
+      -win32)
+         windows32="1"
+         shift
+      ;;
+      -d|--debug)
+         debug="1"
+         shift
+      ;;
+      *)
+         echo "Unknown option."
+         echo "Type `basename $0` -h or --help for usage"
+         exit 1
+      ;;
+   esac
+done
+
+if uname -a | grep -iq linux 
+   then
+   OS="linux"
+elif uname -a | grep -iq mac
+   then
+   OS="mac"
+else
+   echo "You are running on a non supported system"
+   exit 2
+fi
+
+if [[ -f CMakeLists.txt ]]
+   then
+   if [[ -d build ]] ; then rm -rf ./build ; fi
+   mkdir build
+   cd build
+   if [[ "${windows32}" == "1" ]]
+      then
+      if [[ -d ../Win32 ]] ; then rm -rf ../Win32 ; fi
+      cmake -DCMAKE_TOOLCHAIN_FILE=/usr/share/qt-cross-compile/win32-mingw.cmake ../
+      confResult=$?
+   elif [[ "${windows64}" == "1" ]]
+      then
+      if [[ -d ../Win64 ]] ; then rm -rf ../Win64 ; fi
+      cmake -DCMAKE_TOOLCHAIN_FILE=/usr/share/qt-cross-compile/win64-mingw.cmake ../
+      confResult=$?
+   else
+      cmake ../
+      confResult=$?
+   fi
+   if [[ ${confResult} != "0" ]] ; then echo -e "\n!!!!!!!!!!!!!!!!!!!!!\nAn error occured while configuring.\nExiting without removing any files.\n\n" ; cd ../ ; exit 3 ; fi
+   make -j6
+   makeresult="$?"
+   if [[ "$makeresult" != "0" ]] ; then echo -e "\n!!!!!!!!!!!!!!!!!!!!!\nAn error occured while compiling.\nExiting without removing any files.\n\n" ; cd ../ ; exit 4 ; fi
+   cd ../
+   if [[ "$debug" != "1" ]] ; then rm -rf ./build ; fi
+   exit 0
+else
+   echo -e "\n!!!!!!!!!!!!!!!!!!!!!\nNo CMakeLists file in the current folder!Exiting!\n\n"
+   exit 5
+fi
+
+exit 0
