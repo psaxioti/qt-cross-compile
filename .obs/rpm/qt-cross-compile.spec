@@ -30,12 +30,12 @@ Scripts and toolchain files in order to cross compile with mingw.
 %build
 
 %install
-install -Dm755 find_dlls   %{buildroot}%{_bindir}/find_dlls
-install -Dm755 make_msi    %{buildroot}%{_bindir}/make_msi
-install -Dm755 qt_install  %{buildroot}%{_bindir}/qt_install
+install -Dm755 Scripts/find_dlls   %{buildroot}%{_bindir}/find_dlls
+install -Dm755 Scripts/make_msi    %{buildroot}%{_bindir}/make_msi
+install -Dm755 Scripts/qt_install  %{buildroot}%{_bindir}/qt_install
 
-install -Dm644 win32-mingw.cmake %{buildroot}%{_datadir}/%{name}/win32-mingw.cmake
-install -Dm644 win64-mingw.cmake %{buildroot}%{_datadir}/%{name}/win64-mingw.cmake
+install -Dm644 ToolChains/win32-mingw.cmake %{buildroot}%{_datadir}/%{name}/win32-mingw.cmake
+install -Dm644 ToolChains/win64-mingw.cmake %{buildroot}%{_datadir}/%{name}/win64-mingw.cmake
 
 %files
 %{_bindir}/*
